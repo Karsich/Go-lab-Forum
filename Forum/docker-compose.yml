@@ -1,14 +1,11 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16.8
     container_name: forum-postgres
     environment:
       POSTGRES_USER: forum_admin
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-strongpassword123}
+      POSTGRES_PASSWORD: strongpassword123  # Убрали переменную для простоты
       POSTGRES_DB: forum_db
-      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "5432:5432"
     volumes:
@@ -17,9 +14,20 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U forum_admin -d forum_db"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 10s  # Увеличили таймаут
+      retries: 10   # Увеличили количество попыток
     restart: unless-stopped
+
+  main-service:
+    build: ./main-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_DSN: "host=forum-postgres user=forum_admin password=strongpassword123 dbname=forum_db port=5432 sslmode=disable"
+    restart: on-failure
 
 volumes:
   postgres_data:
