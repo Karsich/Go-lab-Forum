@@ -41,7 +41,8 @@ func main() {
 
 	// Admin endpoints
 	admin := r.Group("/")
-	admin.Use(middleware.AdminMiddleware())
+	admin.Use(middleware.AuthMiddleware(db.DB))
+	admin.Use(middleware.RoleMiddleware("admin"))
 	{
 		admin.DELETE("/topics/:topic_id", handlers.DeleteTopic)
 		admin.DELETE("/topics/:topic_id/posts/:post_id", handlers.DeletePost)

@@ -92,8 +92,9 @@ func Login(c *gin.Context) {
 
 	// Генерируем токен
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": user.ID,
-		"exp": time.Now().Add(time.Hour * 72).Unix(),
+		"sub":  user.ID,
+		"role": user.Role,
+		"exp":  time.Now().Add(time.Hour * 72).Unix(),
 	})
 
 	// Подписываем токен
