@@ -28,5 +28,15 @@ services:
       DB_DSN: "host=forum-postgres user=forum_admin password=strongpassword123 dbname=forum_db port=5432 sslmode=disable"
     restart: on-failure
 
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+    environment:
+      DB_DSN: "host=forum-postgres user=forum_admin password=strongpassword123 dbname=forum_db port=5432 sslmode=disable"
+    restart: on-failure
+
 volumes:
   postgres_data:

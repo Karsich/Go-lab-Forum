@@ -13,9 +13,10 @@ var DB *gorm.DB
 
 func Connect() {
 	// Получаем переменные окружения напрямую
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		os.Getenv("DB_HOST"), os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"),
-		os.Getenv("DB_NAME"), os.Getenv("DB_PORT"))
+	dsn := os.Getenv("DB_DSN")
+	if dsn == "" {
+		dsn = "host=forum-postgres user=forum_admin password=strongpassword123 dbname=forum_db port=5432 sslmode=disable"
+	}
 
 	// Подключаемся к базе данных
 	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
