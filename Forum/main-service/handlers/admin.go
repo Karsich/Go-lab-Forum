@@ -16,28 +16,25 @@ func DeletePost(c *gin.Context) {
 		return
 	}
 
-	// Проверяем, есть ли ответы на это сообщение
-	//var repliesCount int64
-	//db.DB.Model(&models.Post{}).Where("parent_post_id = ?", postID).Count(&repliesCount)
-	//if repliesCount > 0 {
-	//	c.JSON(http.StatusConflict, gin.H{"error": "Cannot delete post with replies"})
-	//	return
-	//}
+	currentUser := c.MustGet("user").(models.User)
 
-	// Проверяем права (только автор может удалять)
-	userID := c.GetUint("userID") // Предполагаем, что middleware установил userID
 	var post models.Post
 	if err := db.DB.First(&post, postID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Post not found"})
 		return
 	}
 
-	if post.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "No permission to delete this post"})
+	// Проверка прав: админ или автор поста
+	if currentUser.Role != "admin" && post.UserID != currentUser.ID {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":    "No permission to delete this post",
+			"required": "admin or post author",
+		})
 		return
 	}
 
-	if err := db.DB.Delete(&models.Post{}, postID).Error; err != nil {
+	// Удаляем только этот пост (ответы остаются)
+	if err := db.DB.Delete(&post).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -46,27 +43,56 @@ func DeletePost(c *gin.Context) {
 }
 
 func DeleteTopic(c *gin.Context) {
-	id := c.Param("topic_id")
+	topicID := c.Param("topic_id")
 
-	// Каскадное удаление (тема + связанные посты + реакции)
-	if err := db.DB.Select("Posts", "Posts.Reactions").Delete(&models.Topic{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	currentUser := c.MustGet("user").(models.User)
 
-	c.JSON(http.StatusOK, gin.H{"message": "Topic deleted successfully"})
-}
-
-func UpdateTopicStatus(c *gin.Context) {
-	id := c.Param("topic_id")
 	var topic models.Topic
-	if err := db.DB.First(&topic, id).Error; err != nil {
+	if err := db.DB.First(&topic, topicID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Topic not found"})
 		return
 	}
 
+	// Проверка прав: только админ может удалять темы
+	if currentUser.Role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":    "Admin access required",
+			"required": "admin",
+		})
+		return
+	}
+
+	// Каскадное удаление темы и всех связанных постов
+	if err := db.DB.Select("Posts").Delete(&topic).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Topic and all posts deleted successfully"})
+}
+
+func UpdateTopicStatus(c *gin.Context) {
+	topicID := c.Param("topic_id")
+
+	currentUser := c.MustGet("user").(models.User)
+
+	var topic models.Topic
+	if err := db.DB.First(&topic, topicID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Topic not found"})
+		return
+	}
+
+	// Проверка прав: админ или автор темы
+	if currentUser.Role != "admin" && topic.UserID != currentUser.ID {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":    "No permission to update this topic",
+			"required": "admin or topic author",
+		})
+		return
+	}
+
 	var input struct {
-		Status string `json:"status" binding:"required"`
+		Status string `json:"status" binding:"required,oneof=open closed"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -79,5 +105,8 @@ func UpdateTopicStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, topic)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Topic status updated",
+		"status":  topic.Status,
+	})
 }
