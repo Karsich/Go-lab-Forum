@@ -14,14 +14,15 @@ import (
 
 var rdb *redis.Client
 
+// Инициализация Redis-клиента
 func InitRedis() {
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     os.Getenv("REDIS_ADDR"),
-		Password: "",
-		DB:       0,
+		Password: "", // используйте пароль, если необходимо
+		DB:       0,  // по умолчанию используем базу данных 0
 	})
 
-	// Проверка подключения
+	// Проверка подключения к Redis
 	ctx := context.Background()
 	for i := 0; i < 5; i++ {
 		_, err := rdb.Ping(ctx).Result()
@@ -40,6 +41,7 @@ func InitRedis() {
 	log.Println("Stream and Consumer Group are ready")
 }
 
+// Функция для отправки email-уведомлений
 func sendEmail(to string, message string) error {
 	from := "dane.upton4@ethereal.email"
 	pass := "YxVRsXNbTgkQahfkej"
@@ -65,9 +67,11 @@ func sendEmail(to string, message string) error {
 	return nil
 }
 
+// Обработка уведомлений
 func processNotification(message redis.XMessage) {
 	ctx := context.Background()
 
+	// Извлекаем user_id из сообщения
 	userIDStr, ok := message.Values["user_id"].(string)
 	if !ok {
 		log.Println("Failed to get user_id from message")
@@ -79,6 +83,7 @@ func processNotification(message redis.XMessage) {
 		return
 	}
 
+	// Извлекаем текст уведомления
 	messageText, ok := message.Values["message"].(string)
 	if !ok {
 		log.Println("Failed to get message text from message")
@@ -87,14 +92,14 @@ func processNotification(message redis.XMessage) {
 
 	log.Printf("Processing notification for user %d", userID)
 
-	// Получаем email из БД
+	// Получаем email пользователя из базы данных
 	email, err := db.GetUserEmailByID(int(userID))
 	if err != nil {
 		log.Printf("Failed to get email for user %d: %v", userID, err)
 		return
 	}
 
-	log.Printf("Testing email: Overriding user email to: %s", email)
+	log.Printf("Sending notification to email: %s", email)
 
 	// Отправляем уведомление на email
 	err = sendEmail(email, messageText)
@@ -102,23 +107,31 @@ func processNotification(message redis.XMessage) {
 		log.Printf("Failed to send email to user %d: %v", userID, err)
 	}
 
-	// Подтверждение обработки сообщения
+	// Сохраняем уведомление в базе данных
+	err = db.SaveNotification(uint(userID), "new_message", messageText)
+	if err != nil {
+		log.Printf("Failed to save notification for user %d: %v", userID, err)
+	}
+
+	// Подтверждаем обработку сообщения
 	_, err = rdb.XAck(ctx, "notifications", "notification-consumer", message.ID).Result()
 	if err != nil {
 		log.Printf("Failed to acknowledge message %s: %v", message.ID, err)
 	}
 }
 
+// Основная функция для обработки уведомлений
 func ProcessNotifications() {
 	ctx := context.Background()
 
 	for {
+		// Чтение из Redis Stream
 		streams, err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    "notification-group",
 			Consumer: "notification-consumer",
 			Streams:  []string{"notifications", ">"},
 			Count:    1,
-			Block:    0, // Ожидаем новые сообщения
+			Block:    0, // Блокируемся до появления новых сообщений
 		}).Result()
 
 		if err != nil {
@@ -127,6 +140,7 @@ func ProcessNotifications() {
 			continue
 		}
 
+		// Обработка сообщений из потока
 		for _, stream := range streams {
 			for _, message := range stream.Messages {
 				processNotification(message)

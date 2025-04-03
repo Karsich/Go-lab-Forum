@@ -39,6 +39,25 @@ services:
       DB_DSN: "host=forum-postgres user=forum_admin password=strongpassword123 dbname=forum_db port=5432 sslmode=disable"
       SECRET_KEY: "supersecretkey"
     restart: on-failure
+  notification-service:
+    build: ./notification-service
+    ports:
+      - "8083:8083"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DB_DSN: "host=forum-postgres user=forum_admin password=strongpassword123 dbname=forum_db port=5432 sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      EMAIL_ADDRESS: "-"
+      EMAIL_PASSWORD: "-"
+    restart: on-failure
 
+  redis:
+    image: redis:alpine
+    container_name: forum-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
 volumes:
   postgres_data:

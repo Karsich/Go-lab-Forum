@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS posts (
 -- Таблица реакций
 CREATE TABLE IF NOT EXISTS reactions (
                                          id SERIAL PRIMARY KEY,
-                                         type VARCHAR(50) NOT NULL,
+                                         type VARCHAR(50) NOT NULL CHECK,
     user_id INTEGER REFERENCES users(id),
     post_id INTEGER REFERENCES posts(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
