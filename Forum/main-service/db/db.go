@@ -32,7 +32,7 @@ func InitDB() error {
 	}
 
 	// Автомиграция моделей
-	err = DB.AutoMigrate(&models.User{}, &models.Topic{}, &models.Post{}, &models.Reaction{})
+	err = DB.AutoMigrate(&models.User{}, &models.Topic{}, &models.Post{}, &models.Reaction{}, &models.Notification{}, &models.PrivateMessage{})
 	if err != nil {
 		return err
 	}
