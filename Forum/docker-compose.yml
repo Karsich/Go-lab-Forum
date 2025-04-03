@@ -26,6 +26,7 @@ services:
       - postgres
     environment:
       DB_DSN: "host=forum-postgres user=forum_admin password=strongpassword123 dbname=forum_db port=5432 sslmode=disable"
+      SECRET_KEY: "supersecretkey"
     restart: on-failure
 
   auth-service:
@@ -36,6 +37,7 @@ services:
       - postgres
     environment:
       DB_DSN: "host=forum-postgres user=forum_admin password=strongpassword123 dbname=forum_db port=5432 sslmode=disable"
+      SECRET_KEY: "supersecretkey"
     restart: on-failure
 
 volumes:

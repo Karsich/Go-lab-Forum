@@ -9,10 +9,28 @@ import (
 )
 
 func CreateTopic(c *gin.Context) {
-	var topic models.Topic
-	if err := c.ShouldBindJSON(&topic); err != nil {
+	// Получаем пользователя из контекста (установлено в middleware)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var input struct {
+		Title       string `json:"title" binding:"required"`
+		Description string `json:"description"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	topic := models.Topic{
+		Title:       input.Title,
+		Description: input.Description,
+		UserID:      userID.(uint), // Назначаем автором текущего пользователя
+		Status:      "open",        // Статус по умолчанию
 	}
 
 	if err := db.DB.Create(&topic).Error; err != nil {
@@ -24,10 +42,10 @@ func CreateTopic(c *gin.Context) {
 }
 
 func CreatePost(c *gin.Context) {
-	// Получаем userID из middleware
+	// Проверка аутентификации
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
 		return
 	}
 
@@ -38,7 +56,7 @@ func CreatePost(c *gin.Context) {
 		return
 	}
 
-	// Проверяем существование темы
+	// Проверка существования и доступности темы
 	var topic models.Topic
 	if err := db.DB.First(&topic, topicID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Topic not found"})
@@ -61,7 +79,7 @@ func CreatePost(c *gin.Context) {
 
 	post := models.Post{
 		Content: input.Content,
-		UserID:  userID.(uint), // Важно: приводим к типу uint
+		UserID:  userID.(uint),
 		TopicID: uint(topicID),
 	}
 
@@ -74,7 +92,13 @@ func CreatePost(c *gin.Context) {
 }
 
 func CreateReply(c *gin.Context) {
-	// Получаем ID родительского сообщения
+	// Проверка аутентификации
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
+
 	parentPostIDStr := c.Param("post_id")
 	parentPostID, err := strconv.ParseUint(parentPostIDStr, 10, 32)
 	if err != nil {
@@ -82,14 +106,14 @@ func CreateReply(c *gin.Context) {
 		return
 	}
 
-	// Проверяем существование родительского сообщения
+	// Проверка родительского сообщения
 	var parentPost models.Post
 	if err := db.DB.First(&parentPost, parentPostID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Parent post not found"})
 		return
 	}
 
-	// Проверяем, не закрыта ли тема
+	// Проверка темы
 	var topic models.Topic
 	if err := db.DB.First(&topic, parentPost.TopicID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Topic not found"})
@@ -101,19 +125,21 @@ func CreateReply(c *gin.Context) {
 		return
 	}
 
-	// Получаем userID из middleware аутентификации
-	userID := c.GetUint("userID")
+	var input struct {
+		Content string `json:"content" binding:"required"`
+	}
 
-	var reply models.Post
-	if err := c.ShouldBindJSON(&reply); err != nil {
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Устанавливаем параметры ответа
-	reply.UserID = userID
-	reply.TopicID = parentPost.TopicID
-	reply.ParentPostID = &parentPost.ID // Указываем родительское сообщение
+	reply := models.Post{
+		Content:      input.Content,
+		UserID:       userID.(uint),
+		TopicID:      parentPost.TopicID,
+		ParentPostID: &parentPost.ID,
+	}
 
 	if err := db.DB.Create(&reply).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -124,7 +150,13 @@ func CreateReply(c *gin.Context) {
 }
 
 func HandleReaction(c *gin.Context) {
-	// Получаем ID поста
+	// Проверка аутентификации
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
+
 	postIDStr := c.Param("post_id")
 	postID, err := strconv.ParseUint(postIDStr, 10, 32)
 	if err != nil {
@@ -132,12 +164,8 @@ func HandleReaction(c *gin.Context) {
 		return
 	}
 
-	// Получаем ID пользователя из middleware
-	userID := c.GetUint("userID")
-
-	// Парсим входные данные
 	var input struct {
-		Type string `json:"type"` // Может быть "like", "dislike" или пустая строка для удаления
+		Type string `json:"type" binding:"omitempty,oneof=like dislike"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -145,14 +173,14 @@ func HandleReaction(c *gin.Context) {
 		return
 	}
 
-	// Проверяем существование поста
+	// Проверка существования поста
 	var post models.Post
 	if err := db.DB.First(&post, postID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Post not found"})
 		return
 	}
 
-	// Ищем существующую реакцию
+	// Поиск существующей реакции
 	var reaction models.Reaction
 	dbResult := db.DB.Where("user_id = ? AND post_id = ?", userID, postID).First(&reaction)
 
@@ -168,6 +196,7 @@ func HandleReaction(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "No reaction to remove"})
 		}
 	} else {
+		// Добавление/изменение реакции
 		if dbResult.Error == nil {
 			if reaction.Type == input.Type {
 				c.JSON(http.StatusOK, gin.H{"message": "Reaction already exists", "reaction": reaction})
@@ -179,9 +208,8 @@ func HandleReaction(c *gin.Context) {
 				return
 			}
 		} else {
-			// Создаем новую реакцию
 			reaction = models.Reaction{
-				UserID: userID,
+				UserID: userID.(uint),
 				PostID: uint(postID),
 				Type:   input.Type,
 			}

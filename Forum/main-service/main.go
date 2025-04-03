@@ -5,6 +5,7 @@ import (
 	"log"
 	"main-service/db"
 	"main-service/handlers"
+	"main-service/middleware"
 )
 
 func main() {
@@ -29,6 +30,7 @@ func main() {
 
 	// Authenticated endpoints
 	auth := r.Group("/")
+	authMiddleware := middleware.AuthMiddleware(db.DB)
 	auth.Use(authMiddleware)
 	{
 		auth.POST("/topics", handlers.CreateTopic)
@@ -39,7 +41,7 @@ func main() {
 
 	// Admin endpoints
 	admin := r.Group("/")
-	admin.Use(adminMiddleware)
+	admin.Use(middleware.AdminMiddleware())
 	{
 		admin.DELETE("/topics/:topic_id", handlers.DeleteTopic)
 		admin.DELETE("/topics/:topic_id/posts/:post_id", handlers.DeletePost)
@@ -50,16 +52,4 @@ func main() {
 	if err := r.Run(":8082"); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
-}
-
-// Middleware (заглушки)
-func authMiddleware(c *gin.Context) {
-	// Временная заглушка - используем ID тестового пользователя
-	c.Set("userID", uint(1))
-	c.Next()
-}
-
-func adminMiddleware(c *gin.Context) {
-	// В реальности проверяем роль пользователя
-	c.Next()
 }
